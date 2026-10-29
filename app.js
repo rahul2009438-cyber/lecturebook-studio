@@ -35,7 +35,7 @@ function setTranscript(text) {
   const terms = ['plants sunlight', 'food', 'carbon dioxide', 'water', 'glucose', 'oxygen', 'chlorophyll', 'light energy'];
   let highlighted = safeText(state.transcript);
   terms.forEach((term) => { highlighted = highlighted.replace(new RegExp(`(${term})`, 'gi'), '<mark>$1</mark>'); });
-  $('#transcript-text').innerHTML = highlighted.split(/(?<=[à¥¤.!?])\s+/).filter(Boolean).map((part) => `<p>${part}</p>`).join('');
+  $('#transcript-text').innerHTML = highlighted.split(/(?<=[।.!?])\s+/).filter(Boolean).map((part) => `<p>${part}</p>`).join('');
 }
 
 function renderOutputs(outputs) {
@@ -46,14 +46,14 @@ function renderOutputs(outputs) {
   $('#question-list').innerHTML = (outputs.questions || []).map((item, index) => {
     const question = typeof item === 'string' ? item : item.q;
     const answer = typeof item === 'string' ? '' : item.a;
-    return `<div class="question-card"><span class="question-number">${String(index + 1).padStart(2, '0')}</span><div><b>${safeText(question)}</b><p>${safeText(answer)}</p></div><button>âœŽ</button></div>`;
+    return `<div class="question-card"><span class="question-number">${String(index + 1).padStart(2, '0')}</span><div><b>${safeText(question)}</b><p>${safeText(answer)}</p></div><button>✎</button></div>`;
   }).join('');
 }
 
 async function generatePack() {
-  const fallback = 'Photosynthesis-à¦à¦° à¦¸à¦®à¦¯à¦¼ plants sunlight à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§‡ food à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§‡à¥¤ à¦à¦‡ process-à¦ carbon dioxide à¦à¦¬à¦‚ water à¦¥à§‡à¦•à§‡ glucose à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼, à¦†à¦° oxygen à¦à¦•à¦Ÿà¦¿ by-product à¦¹à¦¿à¦¸à§‡à¦¬à§‡ release à¦¹à¦¯à¦¼à¥¤ à¦®à¦¨à§‡ à¦°à¦¾à¦–à¦¬à§‡, chlorophyll à¦¹à¦²à§‹ à¦¸à§‡à¦‡ pigment à¦¯à¦¾ light energy absorb à¦•à¦°à§‡à¥¤';
+  const fallback = 'Photosynthesis-এর সময় plants sunlight ব্যবহার করে food তৈরি করে। এই process-এ carbon dioxide এবং water থেকে glucose তৈরি হয়, আর oxygen একটি by-product হিসেবে release হয়। মনে রাখবে, chlorophyll হলো সেই pigment যা light energy absorb করে।';
   if (!state.transcript) state.transcript = fallback;
-  await showLoading('Building your study pack', 'Protecting language, extracting key ideas and shaping your notesâ€¦', 1100);
+  await showLoading('Building your study pack', 'Protecting language, extracting key ideas and shaping your notes…', 1100);
   try {
     const response = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: state.transcript, kind: 'study-pack' }) });
     const data = await response.json();
@@ -67,17 +67,17 @@ async function generatePack() {
 
 async function uploadFile(file) {
   if (!file) return;
-  await showLoading('Transcribing your lecture', 'Preserving Bengali, English and technical termsâ€¦', 800);
+  await showLoading('Transcribing your lecture', 'Preserving Bengali, English and technical terms…', 800);
   const formData = new FormData();
   formData.append('file', file);
   try {
     const response = await fetch('/api/transcribe', { method: 'POST', body: formData });
     const data = await response.json();
     setTranscript(data.transcript);
-    toast(data.mode === 'groq-live' ? 'Live transcription complete.' : 'Sample transcript loaded â€” connect Groq for live audio.');
+    toast(data.mode === 'groq-live' ? 'Live transcription complete.' : 'Sample transcript loaded — connect Groq for live audio.');
   } catch (error) {
-    setTranscript('Photosynthesis-à¦à¦° à¦¸à¦®à¦¯à¦¼ plants sunlight à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§‡ food à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§‡à¥¤ à¦à¦‡ process-à¦ carbon dioxide à¦à¦¬à¦‚ water à¦¥à§‡à¦•à§‡ glucose à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼, à¦†à¦° oxygen à¦à¦•à¦Ÿà¦¿ by-product à¦¹à¦¿à¦¸à§‡à¦¬à§‡ release à¦¹à¦¯à¦¼à¥¤');
-    toast('Server unavailable â€” sample transcript loaded.');
+    setTranscript('Photosynthesis-এর সময় plants sunlight ব্যবহার করে food তৈরি করে। এই process-এ carbon dioxide এবং water থেকে glucose তৈরি হয়, আর oxygen একটি by-product হিসেবে release হয়।');
+    toast('Server unavailable — sample transcript loaded.');
   }
   navigate('transcript');
 }
@@ -88,24 +88,23 @@ $('#browse-button').addEventListener('click', () => $('#audio-input').click());
 $('#audio-input').addEventListener('change', (event) => uploadFile(event.target.files[0]));
 $('#sample-trigger').addEventListener('click', () => uploadFile(new File(['sample lecture'], 'photosynthesis-sample.txt', { type: 'text/plain' })));
 $('#paste-trigger').addEventListener('click', () => {
-  const value = window.prompt('Paste your transcript here:', 'Photosynthesis-à¦à¦° à¦¸à¦®à¦¯à¦¼ plants sunlight à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§‡ food à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§‡à¥¤');
-  if (value) { setTranscript(value); navigate('transcript'); toast('Transcript added â€” ready for review.'); }
+  const value = window.prompt('Paste your transcript here:', 'Photosynthesis-এর সময় plants sunlight ব্যবহার করে food তৈরি করে।');
+  if (value) { setTranscript(value); navigate('transcript'); toast('Transcript added — ready for review.'); }
 });
 $('#generate-all').addEventListener('click', generatePack);
 $('#generate-side').addEventListener('click', generatePack);
 $('#book-from-notes').addEventListener('click', () => navigate('book'));
-$('#export-book').addEventListener('click', () => toast('Export queue created â€” PDF/DOCX renderer is ready for the next release.'));
+$('#export-book').addEventListener('click', () => toast('Export queue created — PDF/DOCX renderer is ready for the next release.'));
 $('#save-design').addEventListener('click', () => toast('Book design saved to your workspace.'));
 $('#play-audio').addEventListener('click', () => toast('Audio preview is available after uploading a lecture file.'));
-$('#edit-transcript').addEventListener('click', () => toast('Review mode enabled â€” highlighted terms are ready to edit.'));
+$('#edit-transcript').addEventListener('click', () => toast('Review mode enabled — highlighted terms are ready to edit.'));
 $('#show-all').addEventListener('click', () => toast('You are already viewing your latest projects.'));
 $('#theme-toggle').addEventListener('click', () => { document.body.classList.toggle('light-theme'); toast(document.body.classList.contains('light-theme') ? 'Soft light theme enabled.' : 'Midnight luxe theme enabled.'); });
 $('#drop-zone').addEventListener('dragover', (event) => { event.preventDefault(); $('#drop-zone').classList.add('drag-over'); });
 $('#drop-zone').addEventListener('dragleave', () => $('#drop-zone').classList.remove('drag-over'));
 $('#drop-zone').addEventListener('drop', (event) => { event.preventDefault(); $('#drop-zone').classList.remove('drag-over'); uploadFile(event.dataTransfer.files[0]); });
 $$('.nav-item[data-view]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.view)));
-$$('[data-open="transcript"]').forEach((row) => row.addEventListener('click', () => { setTranscript('Photosynthesis-à¦à¦° à¦¸à¦®à¦¯à¦¼ plants sunlight à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§‡ food à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§‡à¥¤ à¦à¦‡ process-à¦ carbon dioxide à¦à¦¬à¦‚ water à¦¥à§‡à¦•à§‡ glucose à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼, à¦†à¦° oxygen à¦à¦•à¦Ÿà¦¿ by-product à¦¹à¦¿à¦¸à§‡à¦¬à§‡ release à¦¹à¦¯à¦¼à¥¤ à¦®à¦¨à§‡ à¦°à¦¾à¦–à¦¬à§‡, chlorophyll à¦¹à¦²à§‹ à¦¸à§‡à¦‡ pigment à¦¯à¦¾ light energy absorb à¦•à¦°à§‡à¥¤'); navigate('transcript'); }));
+$$('[data-open="transcript"]').forEach((row) => row.addEventListener('click', () => { setTranscript('Photosynthesis-এর সময় plants sunlight ব্যবহার করে food তৈরি করে। এই process-এ carbon dioxide এবং water থেকে glucose তৈরি হয়, আর oxygen একটি by-product হিসেবে release হয়। মনে রাখবে, chlorophyll হলো সেই pigment যা light energy absorb করে।'); navigate('transcript'); }));
 $$('.theme-option').forEach((button) => button.addEventListener('click', () => { $$('.theme-option').forEach((item) => item.classList.remove('selected')); button.classList.add('selected'); toast(`${button.textContent.trim()} selected.`); }));
 $('#book-title').addEventListener('input', (event) => { $('#preview-title').textContent = event.target.value || 'Untitled book'; });
-setTranscript('Photosynthesis-à¦à¦° à¦¸à¦®à¦¯à¦¼ plants sunlight à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§‡ food à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§‡à¥¤ à¦à¦‡ process-à¦ carbon dioxide à¦à¦¬à¦‚ water à¦¥à§‡à¦•à§‡ glucose à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼, à¦†à¦° oxygen à¦à¦•à¦Ÿà¦¿ by-product à¦¹à¦¿à¦¸à§‡à¦¬à§‡ release à¦¹à¦¯à¦¼à¥¤ à¦®à¦¨à§‡ à¦°à¦¾à¦–à¦¬à§‡, chlorophyll à¦¹à¦²à§‹ à¦¸à§‡à¦‡ pigment à¦¯à¦¾ light energy absorb à¦•à¦°à§‡à¥¤');
-
+setTranscript('Photosynthesis-এর সময় plants sunlight ব্যবহার করে food তৈরি করে। এই process-এ carbon dioxide এবং water থেকে glucose তৈরি হয়, আর oxygen একটি by-product হিসেবে release হয়। মনে রাখবে, chlorophyll হলো সেই pigment যা light energy absorb করে।');
