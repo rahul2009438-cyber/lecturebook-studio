@@ -2,6 +2,8 @@ const fallbackTranscript = 'Photosynthesis-এর সময় plants sunlight �
 const state = {
   transcript: localStorage.getItem('lecturebook.transcript') || '',
   outputs: null,
+  analysis: null,
+  fileName: localStorage.getItem('lecturebook.fileName') || '',
   currentView: 'workspace',
   examTab: 'questions',
 };
@@ -45,9 +47,78 @@ function setTranscript(text) {
   $('#transcript-text').innerHTML = highlighted.split(/(?<=[।.!?])\s+/).filter(Boolean).map((part) => `<p>${part}</p>`).join('');
 }
 
-function fallbackPack(transcript) {
+function getAnalysisConfig() {
+  return {
+    subject: $('#subject-select')?.value || 'Education',
+    topicHint: $('#topic-hint')?.value.trim() || '',
+    filtering: $('#filter-level')?.value || 'balanced',
+    outputType: $('#output-type')?.value || 'exam-ready',
+    preserveSource: $('#preserve-source')?.checked !== false,
+  };
+}
+
+function formatTimestamp(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function classifySegment(text, index, config) {
+  const value = text.toLowerCase();
+  let category = 'CORE_LECTURE';
+  if (/\b(why|what|how|can you|student|প্রশ্ন|কেন|কীভাবে|স্যার)\b/.test(value) && /\?|প্রশ্ন|স্যার/.test(value)) category = 'STUDENT_QUESTION';
+  else if (/for example|উদাহরণ|যেমন|ধরো|ধরা যাক|example/.test(value)) category = 'RELEVANT_EXAMPLE';
+  else if (/attendance|present|roll call|চুপ|শান্ত|বিরতি|নোটিশ|উপস্থিত/.test(value)) category = 'ADMIN_NOISE';
+  else if (/unclear|inaudible|শোনা যাচ্ছে না|হইচই|noise/.test(value)) category = 'UNCLEAR_AUDIO';
+  else if (/football|খেলা|গতকাল|মজা|গল্প/.test(value)) category = 'OFF_TOPIC';
+  const hintWords = (config.topicHint || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2);
+  const topicMatch = !hintWords.length || hintWords.some((word) => value.includes(word));
+  const keepByLevel = config.filtering === 'complete' || (config.filtering === 'balanced' && !['ADMIN_NOISE', 'OFF_TOPIC'].includes(category)) || (config.filtering === 'strict' && topicMatch);
+  return { id: `seg-${index + 1}`, timestamp: formatTimestamp(index * 12), content: text.trim(), category, confidence: category === 'UNCLEAR_AUDIO' ? 0.48 : topicMatch ? 0.94 : 0.72, topicMatch, included: keepByLevel, review: category === 'UNCLEAR_AUDIO' || (config.filtering === 'strict' && !topicMatch) };
+}
+
+function fallbackAnalyze(transcript, config = getAnalysisConfig()) {
+  const segments = (transcript || fallbackTranscript).split(/(?<=[।.!?])\s+/).filter(Boolean).map((text, index) => classifySegment(text, index, config));
+  return { config, segments, reviewQueue: segments.filter((segment) => segment.review), topicMatches: segments.filter((segment) => segment.topicMatch).length };
+}
+
+function renderAnalysis(analysis) {
+  state.analysis = analysis || fallbackAnalyze(state.transcript);
+  const config = state.analysis.config || getAnalysisConfig();
+  const segments = state.analysis.segments || [];
+  const kept = segments.filter((segment) => segment.included);
+  const review = state.analysis.reviewQueue || segments.filter((segment) => segment.review);
+  const segmentList = $('#segment-list');
+  const reviewList = $('#review-list');
+  if (!segmentList || !reviewList) return;
+  $('#analysis-status').innerHTML = `<i></i>${safeText(config.filtering || 'balanced')} · ${kept.length}/${segments.length} kept`;
+  $('#review-count').textContent = String(review.length);
+  segmentList.innerHTML = segments.map((segment) => `<article class="segment-card ${segment.included ? 'kept' : 'filtered'}"><div class="segment-meta"><time>${safeText(segment.timestamp)}</time><span class="segment-tag ${segment.category.toLowerCase()}">${safeText(segment.category.replaceAll('_', ' '))}</span><b>${Math.round((segment.confidence || 0) * 100)}%</b></div><p>${safeText(segment.content)}</p></article>`).join('') || '<p class="empty-state">No segments yet. Upload a lecture to begin.</p>';
+  reviewList.innerHTML = review.length ? review.map((segment) => `<div class="review-item"><span>${safeText(segment.timestamp)}</span><p>${safeText(segment.content)}</p><b>Review</b></div>`).join('') : '<p class="empty-state">No uncertain segments. The queue is clear.</p>';
+}
+
+function ensureStudioEnhancements() {
+  const transcriptView = $('#view-transcript');
+  const notesView = $('#view-notes');
+  if (transcriptView && !$('#topic-control-panel')) {
+    transcriptView.querySelector('.progress-rail')?.insertAdjacentHTML('afterend', `<div id="topic-control-panel" class="topic-control-panel glass-card"><div class="panel-header"><div><span class="eyebrow">CLASSROOM INTELLIGENCE</span><h3>Focus this lecture</h3></div><span class="check-badge">✓</span></div><p class="control-help">Give the engine a topic and it will classify lecture segments without touching the original transcript.</p><div class="topic-controls-grid"><label>SUBJECT<select id="subject-select"><option>Education</option><option>Modern Computer Applications</option><option>Political Science / Civics</option><option>Biology</option><option>English</option><option>Other subject</option></select></label><label>TOPIC HINT / QUESTION<input id="topic-hint" placeholder="যেমন: দ্বিকক্ষবিশিষ্ট আইনসভার পক্ষে ও বিপক্ষে যুক্তি" /></label><label>FILTERING LEVEL<select id="filter-level"><option value="strict">Strict — exact topic</option><option value="balanced" selected>Balanced — topic + examples</option><option value="complete">Complete — full lecture</option></select></label><label>OUTPUT TYPE<select id="output-type"><option value="exam-ready">Exam-ready notes</option><option value="chapter">Detailed textbook chapter</option><option value="revision">Quick revision summary</option><option value="transcript">Clean transcript only</option></select></label></div><label class="preserve-toggle"><input id="preserve-source" type="checkbox" checked /> Preserve original transcript and timestamps</label><div class="topic-panel-footer"><span id="file-status">Source ready · Raw transcript preserved</span><button class="secondary-button" id="save-analysis">Save focus <span>✓</span></button></div></div>`);
+  }
+  if (notesView && !$('#analysis-panel')) {
+    notesView.querySelector('.quote-card')?.insertAdjacentHTML('beforebegin', `<div id="analysis-panel" class="analysis-panel glass-card"><div class="panel-header"><div><span class="eyebrow">EVIDENCE-LINKED FILTER</span><h3>What the engine kept</h3></div><span id="analysis-status" class="success-label"><i></i>Balanced</span></div><p class="control-help">Original transcript stays untouched. Each extracted segment keeps a category, confidence and approximate source time.</p><div id="segment-list" class="segment-list"></div><div class="review-queue"><div><span class="eyebrow">REVIEW QUEUE</span><h4><span id="review-count">0</span> items need your attention</h4></div><div id="review-list"></div></div></div>`);
+  }
+  const input = $('#audio-input');
+  if (input) { input.hidden = false; input.accept = 'audio/*,video/*,.mp3,.m4a,.wav,.aac,.ogg,.flac,.mp4,.m4v,.mov,.webm,.txt,.md'; input.name = 'lecture-file'; input.classList.add('visually-hidden'); }
+  if (!document.getElementById('studio-enhancement-styles')) {
+    const style = document.createElement('style');
+    style.id = 'studio-enhancement-styles';
+    style.textContent = `.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.topic-control-panel,.analysis-panel{border-radius:17px;padding:20px;margin:0 0 17px}.control-help{color:#7f8da6;font-size:10px;line-height:1.6;margin:8px 0 16px}.topic-controls-grid{display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr;gap:10px}.topic-controls-grid label{display:grid;gap:7px;color:#78869c;font-size:8px;letter-spacing:1px;font-weight:700}.topic-controls-grid input,.topic-controls-grid select{width:100%;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.045);color:#dbe5f5;padding:10px;font-size:10px;min-height:38px}.topic-controls-grid option{background:#111727;color:#eef3ff}.preserve-toggle{display:flex;align-items:center;gap:8px;color:#aab7ca;font-size:10px;margin-top:14px}.preserve-toggle input{accent-color:var(--mint)}.topic-panel-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);margin-top:15px;padding-top:13px;color:#6f7e95;font-size:9px}.segment-list{display:grid;gap:8px;max-height:360px;overflow:auto}.segment-card{border:1px solid var(--line);border-left:3px solid #718098;border-radius:10px;padding:10px 12px;background:rgba(255,255,255,.025)}.segment-card.kept{border-left-color:var(--mint)}.segment-card.filtered{opacity:.6;border-left-color:var(--gold)}.segment-meta{display:flex;align-items:center;gap:8px;color:#728199;font-size:9px}.segment-meta time{font-variant-numeric:tabular-nums}.segment-meta b{margin-left:auto;color:#9eddd3;font-size:9px}.segment-tag{border-radius:12px;padding:3px 6px;background:rgba(111,228,210,.1);color:#9eddd3;font-size:8px;letter-spacing:.2px}.segment-tag.admin_noise,.segment-tag.off_topic{background:rgba(255,190,115,.1);color:#f0c27f}.segment-tag.unclear_audio{background:rgba(246,154,181,.1);color:#f2a7bd}.segment-card p{color:#c5d1e2;line-height:1.55;font-size:10px;margin:7px 0 0}.review-queue{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}.review-queue h4{font-size:12px;color:#dbe5f4;margin:7px 0 11px}.review-item{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:start;border:1px solid rgba(246,154,181,.16);border-radius:8px;padding:8px;color:#8795aa;font-size:9px}.review-item+ .review-item{margin-top:7px}.review-item span{color:#f1b0c2;font-variant-numeric:tabular-nums}.review-item p{margin:0;line-height:1.5}.review-item b{color:#f1b0c2;font-size:8px}.empty-state{color:#718097;font-size:10px;margin:0;padding:10px 0}@media(max-width:900px){.topic-controls-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){.topic-controls-grid{grid-template-columns:1fr}.topic-control-panel,.analysis-panel{padding:15px}.topic-panel-footer{align-items:flex-start;flex-direction:column}.topic-panel-footer button{width:100%}.review-item{grid-template-columns:38px 1fr}.review-item b{grid-column:2}}`;
+    document.head.appendChild(style);
+  }
+}
+
+function fallbackPack(transcript, config = getAnalysisConfig()) {
   const source = transcript || fallbackTranscript;
   return {
+    analysis: fallbackAnalyze(source, config),
     cleanTranscript: source.replace(/\s+/g, ' ').trim(),
     summary: 'Photosynthesis হলো এমন একটি process যেখানে plants sunlight ব্যবহার করে carbon dioxide ও water থেকে glucose তৈরি করে। Chlorophyll light energy absorb করে এবং oxygen by-product হিসেবে বের হয়।',
     keyPoints: [
@@ -104,6 +175,7 @@ function renderExamTab(tab = state.examTab) {
 
 function renderOutputs(outputs) {
   state.outputs = outputs;
+  renderAnalysis(outputs.analysis || fallbackAnalyze(state.transcript));
   $('#summary-content').textContent = outputs.summary || '';
   $('#key-points-list').innerHTML = (outputs.keyPoints || []).map((point) => `<li>${safeText(point)}</li>`).join('');
   $('#definitions-list').innerHTML = (outputs.definitions || []).map((item) => `<div><b>${safeText(item.term)}</b><span>${safeText(item.meaning || item.definition)}</span></div>`).join('');
@@ -112,15 +184,16 @@ function renderOutputs(outputs) {
 
 async function generatePack() {
   if (!state.transcript) state.transcript = fallbackTranscript;
+  const config = getAnalysisConfig();
   await showLoading('Building your study pack', 'Protecting language, extracting key ideas and shaping your notes…', 1100);
   try {
-    const response = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: state.transcript, kind: 'study-pack' }) });
+    const response = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: state.transcript, kind: 'study-pack', config }) });
     if (!response.ok) throw new Error(`Generate failed: ${response.status}`);
     const data = await response.json();
-    renderOutputs(data.outputs || fallbackPack(state.transcript));
+    renderOutputs(data.outputs || fallbackPack(state.transcript, config));
     toast(data.mode === 'groq-live' ? 'Live Groq study pack ready.' : 'Study pack ready in demo mode.');
   } catch (error) {
-    renderOutputs(fallbackPack(state.transcript));
+    renderOutputs(fallbackPack(state.transcript, config));
     toast('Study pack ready — offline fallback used.');
   }
   navigate('notes');
@@ -128,25 +201,46 @@ async function generatePack() {
 
 async function uploadFile(file) {
   if (!file) return;
+  if (file.size > 60 * 1024 * 1024) { toast('File is larger than 60 MB. Choose a smaller recording.'); return; }
+  state.fileName = file.name || 'lecture-audio';
+  localStorage.setItem('lecturebook.fileName', state.fileName);
+  if ($('#file-status')) $('#file-status').textContent = `${state.fileName} · ${(file.size / 1024 / 1024).toFixed(1)} MB · Source preserved`;
   await showLoading('Transcribing your lecture', 'Preserving Bengali, English and technical terms…', 800);
   const formData = new FormData();
   formData.append('file', file);
+  const config = getAnalysisConfig();
+  formData.append('subject', config.subject);
+  formData.append('topic_hint', config.topicHint);
+  formData.append('filtering', config.filtering);
+  formData.append('output_type', config.outputType);
+  formData.append('preserve_source', String(config.preserveSource));
   try {
-    const response = await fetch('/api/transcribe', { method: 'POST', body: formData });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000);
+    const response = await fetch('/api/transcribe', { method: 'POST', body: formData, signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
     const data = await response.json();
-    setTranscript(data.transcript);
+    setTranscript(data.transcript || fallbackTranscript);
+    state.analysis = data.analysis || fallbackAnalyze(state.transcript, getAnalysisConfig());
+    renderAnalysis(state.analysis);
     toast(data.mode === 'groq-live' ? 'Live transcription complete.' : 'Sample transcript loaded — connect Groq for live audio.');
   } catch (error) {
     setTranscript(fallbackTranscript);
-    toast('Server unavailable — sample transcript loaded.');
+    state.analysis = fallbackAnalyze(state.transcript, getAnalysisConfig());
+    renderAnalysis(state.analysis);
+    toast(error.name === 'AbortError' ? 'Upload timed out — sample transcript loaded.' : 'Server unavailable — sample transcript loaded.');
   }
+  $('#audio-input').value = '';
   navigate('transcript');
 }
 
-$('#upload-trigger').addEventListener('click', () => $('#audio-input').click());
-$('#hero-upload').addEventListener('click', () => $('#audio-input').click());
-$('#browse-button').addEventListener('click', () => $('#audio-input').click());
-$('#audio-input').addEventListener('change', (event) => uploadFile(event.target.files[0]));
+ensureStudioEnhancements();
+function openFilePicker() { const input = $('#audio-input'); if (!input) return; input.value = ''; input.click(); }
+$('#upload-trigger').addEventListener('click', openFilePicker);
+$('#hero-upload').addEventListener('click', openFilePicker);
+$('#browse-button').addEventListener('click', openFilePicker);
+$('#audio-input').addEventListener('change', (event) => uploadFile(event.target.files?.[0]));
 $('#sample-trigger').addEventListener('click', () => uploadFile(new File(['sample lecture'], 'photosynthesis-sample.txt', { type: 'text/plain' })));
 $('#paste-trigger').addEventListener('click', () => {
   const value = window.prompt('Paste your transcript here:', 'Photosynthesis-এর সময় plants sunlight ব্যবহার করে food তৈরি করে।');
@@ -175,6 +269,7 @@ function exportBook() {
 }
 $('#export-book').addEventListener('click', exportBook);
 $('#save-design').addEventListener('click', () => { localStorage.setItem('lecturebook.bookTitle', $('#book-title').value); toast('Book design saved to your workspace.'); });
+$('#save-analysis').addEventListener('click', () => { localStorage.setItem('lecturebook.analysisConfig', JSON.stringify(getAnalysisConfig())); state.analysis = fallbackAnalyze(state.transcript || fallbackTranscript, getAnalysisConfig()); renderAnalysis(state.analysis); toast('Topic focus saved. Original transcript remains unchanged.'); });
 $('#play-audio').addEventListener('click', () => toast('Audio preview is available after uploading a lecture file.'));
 $('#edit-transcript').addEventListener('click', () => toast('Review mode enabled — highlighted terms are ready to edit.'));
 $('#show-all').addEventListener('click', () => toast('You are already viewing your latest projects.'));
@@ -204,4 +299,13 @@ const savedTheme = localStorage.getItem('lecturebook.theme');
 if (savedTheme === 'light') document.body.classList.add('light-theme');
 const savedTitle = localStorage.getItem('lecturebook.bookTitle');
 if (savedTitle) { $('#book-title').value = savedTitle; $('#preview-title').textContent = savedTitle; }
+const savedAnalysisConfig = JSON.parse(localStorage.getItem('lecturebook.analysisConfig') || 'null');
+if (savedAnalysisConfig) {
+  if ($('#subject-select')) $('#subject-select').value = savedAnalysisConfig.subject || 'Education';
+  if ($('#topic-hint')) $('#topic-hint').value = savedAnalysisConfig.topicHint || '';
+  if ($('#filter-level')) $('#filter-level').value = savedAnalysisConfig.filtering || 'balanced';
+  if ($('#output-type')) $('#output-type').value = savedAnalysisConfig.outputType || 'exam-ready';
+  if ($('#preserve-source')) $('#preserve-source').checked = savedAnalysisConfig.preserveSource !== false;
+}
 if (!state.transcript) setTranscript(fallbackTranscript);
+renderAnalysis(state.analysis || fallbackAnalyze(state.transcript, getAnalysisConfig()));
